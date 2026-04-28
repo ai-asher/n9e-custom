@@ -23,6 +23,7 @@ import (
 	"github.com/ccfos/nightingale/v6/conf"
 	"github.com/ccfos/nightingale/v6/cron"
 	"github.com/ccfos/nightingale/v6/dumper"
+	customBootstrap "github.com/ccfos/nightingale/v6/internal/custom/bootstrap"
 	"github.com/ccfos/nightingale/v6/memsto"
 	"github.com/ccfos/nightingale/v6/models"
 	"github.com/ccfos/nightingale/v6/models/migrate"
@@ -70,6 +71,7 @@ func Initialize(configDir string, cryptoKey string) (func(), error) {
 	}
 	ctx := ctx.NewContext(context.Background(), db, true)
 	migrate.Migrate(db)
+	customBootstrap.MigrateCustomTables(db)
 	isRootInit := models.InitRoot(ctx)
 
 	config.HTTP.JWTAuth.SigningKey = models.InitJWTSigningKey(ctx)
@@ -127,6 +129,7 @@ func Initialize(configDir string, cryptoKey string) (func(), error) {
 
 	macros.RegisterMacro(macros.MacroInVain)
 	dscache.Init(ctx, false)
+	customBootstrap.InstallHooks(ctx)
 	alert.Start(config.Alert, config.Pushgw, syncStats, alertStats, externalProcessors, targetCache, busiGroupCache, alertMuteCache, alertRuleCache, notifyConfigCache, taskTplCache, dsCache, ctx, promClients, userCache, userGroupCache, notifyRuleCache, notifyChannelCache, messageTemplateCache, configCvalCache)
 
 	writers := writer.NewWriters(config.Pushgw)
