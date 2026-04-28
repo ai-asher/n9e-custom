@@ -1,0 +1,97 @@
+# Local development compose for the n9e-custom fork.
+#
+# Differences from the upstream docker/compose-bridge stack:
+#   - the `nightingale` service builds from source (./docker/Dockerfile.custom)
+#     instead of pulling flashcatcloud/nightingale:latest, so our denoise/
+#     suppress/mute extensions are actually present.
+#   - categraf is omitted to keep the local startup minimal (you can copy
+#     the categraf block back from compose-bridge if you want metrics flow).
+#   - victoriametrics is kept because n9e's defaults expect a TSDB to talk
+#     to; without it the alert engine startup logs noisy errors.
+#
+# Usage:
+#   docker compose -f docker-compose.custom.yml up -d --build
+#   open http://localhost:17000   (default login: root / root.2020)
+#   docker compose -f docker-compose.custom.yml logs -f nightingale
+
+networks:
+  nightingale:
+    driver: bridge
+
+services:
+  mysql:
+    image: "mysql:8"
+    container_name: n9e-mysql
+    hostname: mysql
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: "1234"
+    volumes:
+      - ./.data/mysql:/var/lib/mysql
+      - ./docker/initsql:/docker-entrypoint-initdb.d
+      - ./docker/compose-bridge/etc-mysql/my.cnf:/etc/my.cnf
+    networks: [nightingale]
+    ports: ["3306:3306"]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p1234"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: "redis:6.2"
+    container_name: n9e-redis
+    hostname: redis
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    networks: [nightingale]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.79.12
+    container_name: n9e-vm
+    hostname: victoriametrics
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    networks: [nightingale]
+    ports: ["8428:8428"]
+    command:
+      - "--loggerTimezone=Asia/Shanghai"
+
+  nightingale:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.custom
+    image: n9e-custom:dev
+    container_name: n9e-custom
+    hostname: nightingale
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      GIN_MODE: release
+    volumes:
+      # Reuse the bridge stack's known-good config (MySQL DSN already
+      # points at "mysql:3306", Redis at "redis:6379"). If you want to
+      # tweak settings, edit the file in place — it's read each time the
+      # container restarts.
+      - ./docker/compose-bridge/etc-nightingale:/app/etc
+    networks: [nightingale]
+    ports:
+      - "17000:17000"
+      - "20090:20090"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      victoriametrics:
+        condition: service_started
+    command: ["/app/n9e", "-conf", "/app/etc"]

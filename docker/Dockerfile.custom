@@ -1,0 +1,60 @@
+# Multi-stage build for N9e v8.5.1 + custom denoise/suppress/mute extensions.
+#
+# Build context expectation: project root (so the COPY commands see go.mod,
+# alert/, internal/custom/, etc/, integrations/, front/).
+#
+# Output: a slim image running ./n9e listening on :17000 (HTTP) and :20090
+# (alert engine HTTP). The image is self-contained; runtime config comes
+# from a mounted /app/etc directory (see compose-bridge/etc-nightingale).
+
+ARG GO_VERSION=1.24
+FROM golang:${GO_VERSION}-bookworm AS builder
+
+# Common Go build hygiene.
+ENV CGO_ENABLED=0 \
+    GOOS=linux \
+    GOFLAGS=-mod=mod
+
+WORKDIR /src
+
+# Cache the dependency layer separately from the source — module deps
+# change rarely, source changes constantly.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Source.
+COPY . .
+
+# Strip debug info to keep the binary lean; verbose linker output stays
+# off the critical path.
+RUN go build -trimpath -ldflags='-s -w' -o /out/n9e .
+
+# ---
+
+FROM debian:bookworm-slim AS runtime
+
+# tzdata: N9e + cron mute work in IANA timezones (Asia/Shanghai by default).
+# ca-certificates: outbound notifications (DingTalk / Feishu / Webhook) over HTTPS.
+# Both are tiny and worth keeping in the runtime stage.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Binary + side-files needed at runtime. We deliberately do NOT bake the
+# config.toml into the image — operators mount /app/etc to swap configs
+# without rebuilding.
+COPY --from=builder /out/n9e /app/n9e
+COPY etc /app/etc
+COPY integrations /app/integrations
+COPY front /app/front
+
+ENV TZ=Asia/Shanghai \
+    GIN_MODE=release
+
+EXPOSE 17000 20090
+
+# Default command runs the all-in-one center+alert process. Compose may
+# override to point at a different config file via -conf flag.
+CMD ["/app/n9e", "-conf", "/app/etc"]
