@@ -12,17 +12,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	// EmergencyMuteSingletonID is the only row id we allow. The table is
-	// modeled as a singleton because the global mute is a binary toggle —
-	// multi-row scope is intentionally not supported.
-	EmergencyMuteSingletonID = 1
-
-	// emergencyMuteMaxDurationSec is the safety cap on expire_at. 24 hours
-	// is generous for a planned maintenance window and short enough to
-	// guard against "I'll just leave this on for now" forever-mute scenarios.
-	emergencyMuteMaxDurationSec = 24 * 3600
-)
+// EmergencyMuteSingletonID is the only row id we allow. The table is
+// modeled as a singleton because the global mute is a binary toggle —
+// multi-row scope is intentionally not supported.
+const EmergencyMuteSingletonID = 1
 
 func (r *Router) emergencyMuteGet(c *gin.Context) {
 	row, err := getEmergencyMute(r)
@@ -54,10 +47,16 @@ type emergencyMutePutReq struct {
 	GroupIds      []int64 `json:"group_ids"`      // optional scope
 }
 
-// validate enforces the safety rules we agreed on:
-//   - Enabling requires a non-empty reason.
-//   - Enabling requires expire_at in the future.
-//   - expire_at - now must not exceed emergencyMuteMaxDurationSec.
+// validate enforces the minimum sensible rules:
+//   - Enabling requires a non-empty reason — operators reading audit logs
+//     after a major incident should never have to guess "why was the
+//     platform muted at 03:00".
+//   - If expire_at is set (non-zero), it must be in the future. Setting
+//     it to a past value is a no-op (the mute would expire immediately)
+//     and almost certainly a typo, so we surface it as an error.
+//   - expire_at = 0 means "no expiry", matching the convention used by
+//     N9e's native AlertMute. Operators who want a permanent mute can
+//     use that explicitly.
 //
 // Disabling (Enabled=0) sidesteps every check — there is no scenario where
 // blocking a turn-off is the right call.
@@ -68,11 +67,8 @@ func (req *emergencyMutePutReq) validate(now int64) error {
 	if req.Reason == "" {
 		return ginxBadRequest("reason is required when enabling emergency mute")
 	}
-	if req.ExpireAt <= now {
-		return ginxBadRequest("expire_at must be in the future (got %d, now=%d)", req.ExpireAt, now)
-	}
-	if req.ExpireAt-now > emergencyMuteMaxDurationSec {
-		return ginxBadRequest("expire_at exceeds 24-hour maximum (delta=%ds)", req.ExpireAt-now)
+	if req.ExpireAt != 0 && req.ExpireAt <= now {
+		return ginxBadRequest("expire_at must be 0 (no expiry) or a future timestamp (got %d, now=%d)", req.ExpireAt, now)
 	}
 	return nil
 }

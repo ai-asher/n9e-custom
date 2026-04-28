@@ -74,6 +74,7 @@ func (r *Router) Config(engine *gin.Engine) {
 	g.GET("/emergency-mute", r.emergencyMuteGet)
 	g.GET("/incidents", r.incidentList)
 	g.GET("/incident/:id", r.incidentGet)
+	g.GET("/audit-logs", r.auditLogList)
 
 	// Writes — admin only.
 	w := g.Group("")

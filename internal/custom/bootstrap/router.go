@@ -26,6 +26,10 @@ func InstallRouter(c *ctx.Context, parent *centerRouter.Router, engine *gin.Engi
 		return
 	}
 	cr := customRouter.New(c, parent)
+	// Swap the noop audit writer for the real DB-backed one. We do this
+	// here rather than in customRouter.New so unit-tests can construct a
+	// router without DB plumbing.
+	cr.SetAuditWriter(customRouter.NewDBAuditWriter(c))
 	cr.Config(engine)
-	logger.Infof("custom/bootstrap: HTTP CRUD routes mounted at /api/n9e/custom/*")
+	logger.Infof("custom/bootstrap: HTTP CRUD routes mounted at /api/n9e/custom/* (audit -> custom_audit_log)")
 }

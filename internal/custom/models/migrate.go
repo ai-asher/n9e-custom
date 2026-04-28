@@ -35,6 +35,7 @@ func MigrateCustomTables(db *gorm.DB) {
 		&CustomAggregateRule{},
 		&CustomIncident{},
 		&CustomIncidentEvent{},
+		&CustomAuditLog{},
 	}
 
 	for _, t := range tables {
