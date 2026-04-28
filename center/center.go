@@ -150,6 +150,7 @@ func Initialize(configDir string, cryptoKey string) (func(), error) {
 	centerRouter.Config(r)
 	alertrtRouter.Config(r)
 	pushgwRouter.Config(r)
+	customBootstrap.InstallRouter(ctx, centerRouter, r)
 	dumper.ConfigRouter(r)
 
 	if config.Ibex.Enable {
