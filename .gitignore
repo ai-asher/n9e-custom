@@ -73,3 +73,5 @@ n9e.sql
 !/datasource
 
 .env.json
+# Local development data (docker-compose volumes)
+/.data/

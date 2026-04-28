@@ -94,4 +94,4 @@ services:
         condition: service_healthy
       victoriametrics:
         condition: service_started
-    command: ["/app/n9e", "-conf", "/app/etc"]
+    command: ["/app/n9e", "-configs", "/app/etc"]

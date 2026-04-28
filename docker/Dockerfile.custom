@@ -3,14 +3,22 @@
 # Build context expectation: project root (so the COPY commands see go.mod,
 # alert/, internal/custom/, etc/, integrations/, front/).
 #
+# Image stack: golang:1.24-alpine -> alpine:latest. Both are small AND we
+# verified they are present in the local Docker cache, so the build works
+# even when Docker Hub is unreachable.
+#
 # Output: a slim image running ./n9e listening on :17000 (HTTP) and :20090
-# (alert engine HTTP). The image is self-contained; runtime config comes
-# from a mounted /app/etc directory (see compose-bridge/etc-nightingale).
+# (alert engine HTTP). Runtime config is mounted at /app/etc.
 
 ARG GO_VERSION=1.24
-FROM golang:${GO_VERSION}-bookworm AS builder
+FROM golang:${GO_VERSION}-alpine AS builder
 
-# Common Go build hygiene.
+# Tools the build genuinely needs:
+#   git: go mod resolve for some dependencies that prefer git protocol
+#   ca-certificates: HTTPS to proxy.golang.org (skipped at build time if
+#     deps are already in module cache, but harmless to install)
+RUN apk add --no-cache git ca-certificates
+
 ENV CGO_ENABLED=0 \
     GOOS=linux \
     GOFLAGS=-mod=mod
@@ -26,19 +34,19 @@ RUN go mod download
 COPY . .
 
 # Strip debug info to keep the binary lean; verbose linker output stays
-# off the critical path.
-RUN go build -trimpath -ldflags='-s -w' -o /out/n9e .
+# off the critical path. Main entry is cmd/center (the all-in-one center
+# binary that also runs the alert engine when configured).
+RUN go build -trimpath -ldflags='-s -w' -o /out/n9e ./cmd/center/
 
 # ---
 
-FROM debian:bookworm-slim AS runtime
+FROM alpine:latest AS runtime
 
 # tzdata: N9e + cron mute work in IANA timezones (Asia/Shanghai by default).
 # ca-certificates: outbound notifications (DingTalk / Feishu / Webhook) over HTTPS.
-# Both are tiny and worth keeping in the runtime stage.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends tzdata ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache tzdata ca-certificates \
+    && cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone
 
 WORKDIR /app
 
@@ -57,4 +65,4 @@ EXPOSE 17000 20090
 
 # Default command runs the all-in-one center+alert process. Compose may
 # override to point at a different config file via -conf flag.
-CMD ["/app/n9e", "-conf", "/app/etc"]
+CMD ["/app/n9e", "-configs", "/app/etc"]
