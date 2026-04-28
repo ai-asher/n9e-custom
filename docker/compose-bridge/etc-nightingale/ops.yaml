@@ -1,0 +1,57 @@
+# Custom ops registered in addition to N9e's built-in ones.
+#
+# How this is loaded:
+#   center/cconf/ops.go LoadOpsYaml() reads this file (if present) and
+#   MergeOperationConf() merges it with the built-in ops list. A group
+#   here whose 'name' differs from any built-in group is appended; one
+#   that matches a built-in group name would WIN over the built-in list,
+#   so we use a unique 'custom_denoise' group name to be additive.
+#
+# What lives here:
+#   The five pages our fork adds need to appear in users' menus. The
+#   front end's SideMenu filters tabs by perms returned from
+#   /api/n9e/self/perms — so any item not declared here would be silently
+#   hidden for everyone except an Admin (admins receive the full list
+#   computed from the merged Operations, see router_role.go:permsGets).
+#
+#   Strictly speaking only the page-level paths (the menu keys) need to
+#   appear here. The /add /put /del subpaths are listed too so the perm
+#   table stays self-documenting and so future role-based ACLs can grant
+#   write access without a code change.
+
+ops:
+- name: custom_denoise
+  cname: Custom - Denoise
+  ops:
+    - name: /custom/aggregate-rules
+      cname: Custom - Aggregate Rules - View
+    - name: /custom/aggregate-rules/add
+      cname: Custom - Aggregate Rules - Add
+    - name: /custom/aggregate-rules/put
+      cname: Custom - Aggregate Rules - Modify
+    - name: /custom/aggregate-rules/del
+      cname: Custom - Aggregate Rules - Delete
+    - name: /custom/inhibit-rules
+      cname: Custom - Inhibit Rules - View
+    - name: /custom/inhibit-rules/add
+      cname: Custom - Inhibit Rules - Add
+    - name: /custom/inhibit-rules/put
+      cname: Custom - Inhibit Rules - Modify
+    - name: /custom/inhibit-rules/del
+      cname: Custom - Inhibit Rules - Delete
+    - name: /custom/mute-crons
+      cname: Custom - Cron Mute - View
+    - name: /custom/mute-crons/add
+      cname: Custom - Cron Mute - Add
+    - name: /custom/mute-crons/put
+      cname: Custom - Cron Mute - Modify
+    - name: /custom/mute-crons/del
+      cname: Custom - Cron Mute - Delete
+    - name: /custom/emergency-mute
+      cname: Custom - Emergency Mute - View / Set
+    - name: /custom/incidents
+      cname: Custom - Incidents - View
+    - name: /custom/incidents/close
+      cname: Custom - Incidents - Close
+    - name: /custom/audit-logs
+      cname: Custom - Audit Logs - View
