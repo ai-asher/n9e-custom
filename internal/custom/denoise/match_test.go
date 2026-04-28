@@ -76,6 +76,35 @@ func TestMatchRule_TagFilter(t *testing.T) {
 	}
 }
 
+// Regression: a rule whose `filters` column literally contains "[]"
+// (empty JSON array — the natural shape after a UI form leaves the field
+// blank) must be treated as "no tag filter" and pass every event.
+//
+// The earlier implementation rejected such rules, so a UI-saved rule with
+// no tag constraint silently never matched anything. This test pins the
+// fixed behavior.
+func TestMatchRule_EmptyJSONFiltersMeansNoFilter(t *testing.T) {
+	event := &models.AlertCurEvent{TagsMap: map[string]string{"any": "thing"}}
+	rule := &customModels.CustomAggregateRule{
+		Filters: []byte("[]"), // ormx.JSONArr underlying type is []byte
+	}
+	if !MatchRule(event, rule) {
+		t.Fatalf("rule with filters=[] should match everything")
+	}
+}
+
+// Defensive: malformed JSON in filters must still be rejected so a typo
+// in the rule editor cannot silently aggregate every alert.
+func TestMatchRule_MalformedFiltersRejected(t *testing.T) {
+	event := &models.AlertCurEvent{TagsMap: map[string]string{"a": "b"}}
+	rule := &customModels.CustomAggregateRule{
+		Filters: []byte("not json"),
+	}
+	if MatchRule(event, rule) {
+		t.Fatalf("malformed filters JSON must reject the rule")
+	}
+}
+
 func TestSelectBestRule_PriorityWins(t *testing.T) {
 	event := &models.AlertCurEvent{}
 

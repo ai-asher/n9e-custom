@@ -34,18 +34,21 @@ func MatchRule(event *models.AlertCurEvent, rule *customModels.CustomAggregateRu
 		return false
 	}
 
-	// Tag filter: empty filters list means "match everything" — same
-	// convention as native AlertMute.ITags. Non-empty list means ALL
-	// filters must match (logical AND).
+	// Tag filter: an empty filter list (literally [] in JSON, or no rows
+	// at all) means "match everything" — same convention as native
+	// AlertMute.ITags. A non-empty list means ALL filters must match
+	// (logical AND).
 	if len(rule.Filters) > 0 {
 		filters, err := parseTagFilters(rule.Filters)
-		if err != nil || len(filters) == 0 {
-			// A malformed filter rule is treated as non-matching rather
-			// than panicking — a bad rule should never silently aggregate
-			// every event in the system.
+		if err != nil {
+			// Malformed JSON in the rule should NOT silently match every
+			// event. Reject the rule outright.
 			return false
 		}
-		if !matchAllTagFilters(event.TagsMap, filters) {
+		// len(filters)==0 happens when the column literally holds "[]" —
+		// that's a valid "no filter" config, fall through to the success
+		// branch.
+		if len(filters) > 0 && !matchAllTagFilters(event.TagsMap, filters) {
 			return false
 		}
 	}

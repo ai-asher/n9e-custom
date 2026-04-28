@@ -18,10 +18,13 @@ func loadAggregateRules(c *ctx.Context) []*customModels.CustomAggregateRule {
 		logger.Errorf("custom/bootstrap: failed to load aggregate rules: %v", err)
 		return nil
 	}
+	logger.Infof("custom/bootstrap: loadAggregateRules raw count=%d", len(rules))
 	// Decode JSON columns into their *Json siblings so MatchRule can
 	// inspect them without re-parsing on every event.
 	for _, r := range rules {
 		decodeRuleJSON(r)
+		logger.Infof("custom/bootstrap: rule id=%d name=%q disabled=%d window_sec=%d dimensions_len=%d",
+			r.Id, r.Name, r.Disabled, r.WindowSec, len(r.Dimensions))
 	}
 	return rules
 }
