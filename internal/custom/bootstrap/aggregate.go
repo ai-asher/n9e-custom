@@ -36,7 +36,13 @@ func loadAggregateRules(c *ctx.Context) []*customModels.CustomAggregateRule {
 // across the lifetime of the process; future hot-reload could swap the
 // closure target atomically.
 func wireAggregator(c *ctx.Context, rules []*customModels.CustomAggregateRule) {
-	provider := &denoise.StaticRuleProvider{Rules: rules}
+	wireAggregatorWithProvider(c, &denoise.StaticRuleProvider{Rules: rules})
+}
+
+// wireAggregatorWithProvider is the actual wiring; wireAggregator above
+// is kept as a thin compatibility shim in case other callers (or tests)
+// still hand in a static slice.
+func wireAggregatorWithProvider(c *ctx.Context, provider denoise.RuleProvider) {
 	repo := denoise.NewRepo(c)
 	idx := denoise.NewActiveIncidentIndex()
 	storm := denoise.NewStormDetector()

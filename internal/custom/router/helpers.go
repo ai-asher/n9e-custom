@@ -67,13 +67,38 @@ func urlParamID(c *gin.Context) int64 {
 //
 // We accept any value rather than overload three functions because the
 // handlers all receive interface{} from JSON unmarshal anyway.
+//
+// Edge case worth documenting: a typed-nil slice (e.g. []int64(nil)) is
+// NOT == nil through an interface{}. json.Marshal turns it into "null",
+// but for our DB columns we want "[]" so the downstream parser doesn't
+// have to special-case the literal string "null". The reflect-shape check
+// below covers all three concrete slice types we use.
 func encodeJSONList(v interface{}) string {
-	if v == nil {
+	if v == nil || isNilSlice(v) {
 		return "[]"
 	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return "[]"
 	}
+	if string(b) == "null" {
+		return "[]"
+	}
 	return string(b)
+}
+
+// isNilSlice reports whether v is a typed-nil slice — the case the plain
+// `v == nil` check misses for []T(nil) values arriving through an
+// interface{}. Limited to the three slice types our DTOs actually use,
+// because reflection costs more than three explicit type assertions.
+func isNilSlice(v interface{}) bool {
+	switch s := v.(type) {
+	case []int64:
+		return s == nil
+	case []int:
+		return s == nil
+	case []string:
+		return s == nil
+	}
+	return false
 }

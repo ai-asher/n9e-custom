@@ -81,23 +81,35 @@ func wireMuteAndSuppress(
 	emergency *mute.EmergencyState,
 	suppressRules []*suppress.CompiledRule,
 ) {
-	// Inner: suppress.
-	suppressIdx := suppress.NewRootCauseIndex(600)
-	suppressInh := suppress.NewInhibitor(
-		&suppress.StaticRuleProvider{Rules: suppressRules},
-		suppressIdx,
-	)
-	suppressHook := suppress.NewHookAdapter(suppressInh, nil)
-
-	// Outer: mute.
+	// Compatibility shim — wraps the static slices in static providers
+	// and forwards to the provider-based wiring used by InstallHooks.
 	emergencyHolder := mute.NewEmergencyHolder()
 	if emergency != nil {
 		emergencyHolder.Set(emergency)
 	}
-	muteEval := mute.NewEvaluator(
+	wireMuteAndSuppressWithProviders(
 		&mute.StaticCronRuleProvider{Rules: cronRules},
 		emergencyHolder,
+		&suppress.StaticRuleProvider{Rules: suppressRules},
 	)
+}
+
+// wireMuteAndSuppressWithProviders is the real wiring used by both the
+// new refreshing path (InstallHooks) and the legacy static path (above).
+// Accepts already-built providers and an EmergencyHolder so the caller
+// chooses the refresh strategy.
+func wireMuteAndSuppressWithProviders(
+	cronProvider mute.CronRuleProvider,
+	emergencyHolder *mute.EmergencyHolder,
+	suppressProvider suppress.RuleProvider,
+) {
+	// Inner: suppress.
+	suppressIdx := suppress.NewRootCauseIndex(600)
+	suppressInh := suppress.NewInhibitor(suppressProvider, suppressIdx)
+	suppressHook := suppress.NewHookAdapter(suppressInh, nil)
+
+	// Outer: mute.
+	muteEval := mute.NewEvaluator(cronProvider, emergencyHolder)
 	muteHook := mute.NewHookAdapter(muteEval, suppressHook.Hook)
 
 	muteHook.Install()

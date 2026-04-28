@@ -13,11 +13,14 @@ import (
 // Both shapes are observed across N9e's various conversion helpers, so we
 // accept both rather than gambling on which our raw rows use.
 //
-// Empty input yields nil (treated as "no scope = match all" by the
-// matchers downstream).
+// Empty input — or the literal JSON null "null" — yields nil (treated as
+// "no scope = match all" by the matchers downstream). The "null" case
+// matters because Go's json.Marshal of a nil []int64 produces the string
+// "null", not "[]", so a struct with a nil slice round-trips through the
+// API + DB and lands here unchanged.
 func parseInt64CSV(s string) []int64 {
 	s = strings.TrimSpace(s)
-	if s == "" {
+	if s == "" || s == "null" {
 		return nil
 	}
 	if s[0] == '[' {
@@ -45,10 +48,11 @@ func parseInt64CSV(s string) []int64 {
 }
 
 // parseIntCSV is parseInt64CSV's narrower sibling for int columns
-// (severity lists). Same dual-format handling.
+// (severity lists). Same dual-format handling, plus tolerance for the
+// JSON-null marshaling artifact described above.
 func parseIntCSV(s string) []int {
 	s = strings.TrimSpace(s)
-	if s == "" {
+	if s == "" || s == "null" {
 		return nil
 	}
 	if s[0] == '[' {

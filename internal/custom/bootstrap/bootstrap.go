@@ -26,6 +26,7 @@ package bootstrap
 
 import (
 	customModels "github.com/ccfos/nightingale/v6/internal/custom/models"
+	"github.com/ccfos/nightingale/v6/internal/custom/mute"
 	"github.com/ccfos/nightingale/v6/pkg/ctx"
 	"github.com/toolkits/pkg/logger"
 	"gorm.io/gorm"
@@ -56,20 +57,38 @@ func InstallHooks(c *ctx.Context) func() {
 		return func() {}
 	}
 
-	// Load rules once at startup. A nil DB or empty result is fine — the
-	// providers simply hold an empty slice and every event passes through.
-	denoiseRules := loadAggregateRules(c)
-	suppressRules := loadInhibitRules(c)
-	cronRules := loadMuteCronRules(c)
-	emergency := loadEmergencyMute(c)
+	// Build refreshing providers. Each one runs a synchronous warm-up
+	// load (Start does this under the hood), so by the time the function
+	// returns, GetActive() reflects the current DB state. After that the
+	// providers refresh on their own cadence in background goroutines.
+	aggProvider := newRefreshingAggregateProvider(c)
+	suppressProvider := newRefreshingSuppressProvider(c)
+	cronProvider := newRefreshingCronProvider(c)
 
-	logger.Infof("custom/bootstrap: loaded denoise=%d suppress=%d cron_mute=%d emergency_enabled=%v",
-		len(denoiseRules), len(suppressRules), len(cronRules), emergency != nil && emergency.Enabled)
+	logger.Infof("custom/bootstrap: refreshing providers started — denoise=%d suppress=%d cron_mute=%d (refresh=5s)",
+		len(aggProvider.GetActiveRules()),
+		len(suppressProvider.GetActive()),
+		len(cronProvider.GetActive()))
 
-	// Build the chain: aggregator runs at pipeline level (separate seam),
-	// while suppress + mute share dispatch.EventMuteHook.
-	wireAggregator(c, denoiseRules)
-	wireMuteAndSuppress(cronRules, emergency, suppressRules)
+	// Wire aggregator — pipeline processor seam.
+	wireAggregatorWithProvider(c, aggProvider)
 
-	return func() {}
+	// Wire mute + suppress hook chain. Emergency mute uses its own
+	// EmergencyHolder (atomic.Pointer); we seed it with the current row
+	// then start a 1-second refresh so the kill-switch is responsive.
+	emergencyHolder := mute.NewEmergencyHolder()
+	if initial := loadEmergencyMute(c); initial != nil {
+		emergencyHolder.Set(initial)
+	}
+	startEmergencyRefresh(c, emergencyHolder)
+
+	wireMuteAndSuppressWithProviders(cronProvider, emergencyHolder, suppressProvider)
+
+	logger.Infof("custom/bootstrap: hook chain installed (mute->suppress->noop), emergency refresh=1s")
+
+	return func() {
+		// No-op for now. The refresher goroutines respect ctx.Ctx and
+		// exit when the application context is cancelled, so the only
+		// reason to call this would be selective teardown in tests.
+	}
 }
