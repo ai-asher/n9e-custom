@@ -8,14 +8,36 @@ import (
 
 // rootCauseEntry holds the minimum information needed to decide whether
 // a target event should be suppressed: the equal-label values of the root
-// alert and a TTL after which the entry self-evicts.
+// alert, a TTL, plus a tiny snapshot used by the suppressed-event audit
+// page (rule name + tags + severity at registration time).
 //
-// We intentionally do NOT cache the full AlertCurEvent — only label values
-// referenced by EqualLabels — to keep the index footprint small even when
-// thousands of alerts are firing simultaneously.
+// We intentionally do NOT cache the full AlertCurEvent — only the few
+// fields the audit page needs — to keep the index footprint small even
+// when thousands of alerts are firing simultaneously.
 type rootCauseEntry struct {
 	equalLabelValues map[string]string
 	expireAt         int64 // unix seconds; 0 = no expiry (rare, see Register)
+
+	// Snapshot fields (for the suppressed-event audit page; not used in
+	// match logic). Populated by Register; nil-safe for older callers.
+	ruleName     string
+	tagsCSV      string
+	severity     int
+	groupId      int64
+	datasourceId int64
+}
+
+// SourceSnapshot is the public shape MatchAny returns alongside the hash.
+// It mirrors the snapshot fields above so the suppress.Decision can carry
+// enough context to populate a CustomSuppressedEvent row without another
+// DB lookup.
+type SourceSnapshot struct {
+	EventHash    string
+	RuleName     string
+	TagsCSV      string
+	Severity     int
+	GroupId      int64
+	DatasourceId int64
 }
 
 // matchKey identifies a (rule, host/service signature) entry inside the
@@ -62,12 +84,34 @@ func NewRootCauseIndex(defaultTTLSec int64) *RootCauseIndex {
 // is the set of (label → value) pairs the event carries for keys listed in
 // the rule's EqualLabels — the caller is expected to extract them before
 // calling Register so this hot-path method is just a map insert.
+//
+// Kept for backwards compat (existing tests). Production code uses
+// RegisterFull below to attach the snapshot needed by the audit page.
 func (idx *RootCauseIndex) Register(ruleId int64, eventHash string, equalValues map[string]string) {
+	idx.RegisterFull(ruleId, eventHash, equalValues, "", "", 0, 0, 0)
+}
+
+// RegisterFull is Register + a snapshot of the source event's metadata.
+// The snapshot fields are read back by MatchAnyFull so the suppression
+// audit row can be populated without re-querying alert_cur_event.
+func (idx *RootCauseIndex) RegisterFull(
+	ruleId int64,
+	eventHash string,
+	equalValues map[string]string,
+	ruleName, tagsCSV string,
+	severity int,
+	groupId, datasourceId int64,
+) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	idx.entries[matchKey{ruleId, eventHash}] = rootCauseEntry{
 		equalLabelValues: equalValues,
 		expireAt:         idx.now() + idx.defaultTTL,
+		ruleName:         ruleName,
+		tagsCSV:          tagsCSV,
+		severity:         severity,
+		groupId:          groupId,
+		datasourceId:     datasourceId,
 	}
 }
 
@@ -101,6 +145,17 @@ func (idx *RootCauseIndex) ForgetEvent(eventHash string) {
 // have <100 simultaneous root-cause alerts per rule, so a linear scan
 // stays well under 1µs.
 func (idx *RootCauseIndex) MatchAny(ruleId int64, targetValues map[string]string) (string, bool) {
+	snap, ok := idx.MatchAnyFull(ruleId, targetValues)
+	if !ok {
+		return "", false
+	}
+	return snap.EventHash, true
+}
+
+// MatchAnyFull is MatchAny + the snapshot the suppression audit row needs.
+// Returns the full source snapshot on hit. Hot-path callers use this to
+// avoid a follow-up DB lookup for the source event's tags / severity.
+func (idx *RootCauseIndex) MatchAnyFull(ruleId int64, targetValues map[string]string) (SourceSnapshot, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -110,17 +165,20 @@ func (idx *RootCauseIndex) MatchAny(ruleId int64, targetValues map[string]string
 			continue
 		}
 		if e.expireAt > 0 && e.expireAt < now {
-			// Lazy expiration: a stale entry is invisible to MatchAny but
-			// stays in the map until Sweep runs. The dual approach keeps
-			// MatchAny lock-free of deletions (under RLock) yet still
-			// bounded growth.
 			continue
 		}
 		if equalValuesMatch(e.equalLabelValues, targetValues) {
-			return k.eventHash, true
+			return SourceSnapshot{
+				EventHash:    k.eventHash,
+				RuleName:     e.ruleName,
+				TagsCSV:      e.tagsCSV,
+				Severity:     e.severity,
+				GroupId:      e.groupId,
+				DatasourceId: e.datasourceId,
+			}, true
 		}
 	}
-	return "", false
+	return SourceSnapshot{}, false
 }
 
 // Sweep removes expired entries. Should be called periodically (e.g. once

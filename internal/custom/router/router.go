@@ -75,6 +75,7 @@ func (r *Router) Config(engine *gin.Engine) {
 	g.GET("/incidents", r.incidentList)
 	g.GET("/incident/:id", r.incidentGet)
 	g.GET("/audit-logs", r.auditLogList)
+	g.GET("/suppressed-events", r.suppressedEventList)
 
 	// Writes — admin only.
 	w := g.Group("")
@@ -90,6 +91,7 @@ func (r *Router) Config(engine *gin.Engine) {
 	w.DELETE("/mute-cron/:id", r.muteCronDelete)
 	w.PUT("/emergency-mute", r.emergencyMutePut)
 	w.PUT("/incident/:id/close", r.incidentClose)
+	w.POST("/inhibit-tryrun", r.inhibitTryRun)
 }
 
 // requireAdmin gates write operations. We piggyback on the "isadmin" flag

@@ -38,6 +38,8 @@ type Decision struct {
 	Suppressed       bool
 	BySourceHash     string // populated when Suppressed=true; empty otherwise
 	ByRuleId         int64
+	ByRuleName       string // snapshot of the inhibit rule's name at decision time
+	BySource         SourceSnapshot
 	NewRegistrations []Registration
 }
 
@@ -72,7 +74,20 @@ func (s *Inhibitor) Decide(event *models.AlertCurEvent) Decision {
 		// event also being a target.
 		if matchAllTagFilters(event.TagsMap, r.SourceMatch) {
 			equalValues := extractEqualValues(event.TagsMap, r.EqualLabels)
-			s.index.Register(r.Rule.Id, event.Hash, equalValues)
+			// RegisterFull persists a small snapshot used by the
+			// suppression audit page; without it the page would have to
+			// re-query alert_cur_event for every row, which is far too
+			// expensive on a hot table.
+			s.index.RegisterFull(
+				r.Rule.Id,
+				event.Hash,
+				equalValues,
+				event.RuleName,
+				event.Tags, // CSV form, already populated by N9e's pipeline
+				event.Severity,
+				event.GroupId,
+				event.DatasourceId,
+			)
 			out.NewRegistrations = append(out.NewRegistrations,
 				Registration{RuleId: r.Rule.Id, EventHash: event.Hash})
 		}
@@ -90,17 +105,19 @@ func (s *Inhibitor) Decide(event *models.AlertCurEvent) Decision {
 		}
 
 		targetValues := extractEqualValues(event.TagsMap, r.EqualLabels)
-		if srcHash, ok := s.index.MatchAny(r.Rule.Id, targetValues); ok {
+		if snap, ok := s.index.MatchAnyFull(r.Rule.Id, targetValues); ok {
 			// Skip self-suppression: an event must not suppress itself
 			// when it matches both Source AND Target sides of the same
 			// rule. (Common with severity-based rules like "critical
 			// suppresses warning" — a critical alert matches both sides.)
-			if srcHash == event.Hash {
+			if snap.EventHash == event.Hash {
 				continue
 			}
 			out.Suppressed = true
-			out.BySourceHash = srcHash
+			out.BySourceHash = snap.EventHash
 			out.ByRuleId = r.Rule.Id
+			out.ByRuleName = r.Rule.Name
+			out.BySource = snap
 		}
 	}
 

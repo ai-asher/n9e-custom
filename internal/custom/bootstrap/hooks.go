@@ -98,15 +98,26 @@ func wireMuteAndSuppress(
 // new refreshing path (InstallHooks) and the legacy static path (above).
 // Accepts already-built providers and an EmergencyHolder so the caller
 // chooses the refresh strategy.
+//
+// Optional final argument: a suppress.RecordSink to receive an audit row
+// every time a target event is suppressed. Variadic so callers that
+// don't care (the legacy static path, tests) need not pass anything.
 func wireMuteAndSuppressWithProviders(
 	cronProvider mute.CronRuleProvider,
 	emergencyHolder *mute.EmergencyHolder,
 	suppressProvider suppress.RuleProvider,
+	sinks ...suppress.RecordSink,
 ) {
 	// Inner: suppress.
 	suppressIdx := suppress.NewRootCauseIndex(600)
 	suppressInh := suppress.NewInhibitor(suppressProvider, suppressIdx)
 	suppressHook := suppress.NewHookAdapter(suppressInh, nil)
+	for _, s := range sinks {
+		if s != nil {
+			suppressHook.SetRecordSink(s)
+			break // one sink is enough; ignore extras
+		}
+	}
 
 	// Outer: mute.
 	muteEval := mute.NewEvaluator(cronProvider, emergencyHolder)

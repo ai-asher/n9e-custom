@@ -51,3 +51,7 @@ ops:
         cname: Custom - Incidents - Close
       - name: /custom/audit-logs
         cname: Custom - Audit Logs - View
+      - name: /custom/suppressed-events
+        cname: Custom - Suppressed Events - View
+      - name: /custom/inhibit-tryrun
+        cname: Custom - Inhibit Try-Run

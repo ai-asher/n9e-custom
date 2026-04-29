@@ -27,6 +27,7 @@ package bootstrap
 import (
 	customModels "github.com/ccfos/nightingale/v6/internal/custom/models"
 	"github.com/ccfos/nightingale/v6/internal/custom/mute"
+	"github.com/ccfos/nightingale/v6/internal/custom/suppressrec"
 	"github.com/ccfos/nightingale/v6/pkg/ctx"
 	"github.com/toolkits/pkg/logger"
 	"gorm.io/gorm"
@@ -82,9 +83,15 @@ func InstallHooks(c *ctx.Context) func() {
 	}
 	startEmergencyRefresh(c, emergencyHolder)
 
-	wireMuteAndSuppressWithProviders(cronProvider, emergencyHolder, suppressProvider)
+	// Build the async suppression-record sink BEFORE wiring the hook so
+	// the suppress.HookAdapter can attach to it. The sink runs on its own
+	// goroutine and survives the lifetime of c.Ctx.
+	sink := suppressrec.NewAsyncSink(c, 0, 0, 0) // zeros = sensible defaults
+	sink.Start(c.Ctx)
 
-	logger.Infof("custom/bootstrap: hook chain installed (mute->suppress->noop), emergency refresh=1s")
+	wireMuteAndSuppressWithProviders(cronProvider, emergencyHolder, suppressProvider, sink)
+
+	logger.Infof("custom/bootstrap: hook chain installed (mute->suppress->noop), emergency refresh=1s, suppression-audit sink active")
 
 	return func() {
 		// No-op for now. The refresher goroutines respect ctx.Ctx and
