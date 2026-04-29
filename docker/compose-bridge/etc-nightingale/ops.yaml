@@ -20,38 +20,34 @@
 #   write access without a code change.
 
 ops:
-- name: custom_denoise
-  cname: Custom - Denoise
-  ops:
-    - name: /custom/aggregate-rules
-      cname: Custom - Aggregate Rules - View
-    - name: /custom/aggregate-rules/add
-      cname: Custom - Aggregate Rules - Add
-    - name: /custom/aggregate-rules/put
-      cname: Custom - Aggregate Rules - Modify
-    - name: /custom/aggregate-rules/del
-      cname: Custom - Aggregate Rules - Delete
-    - name: /custom/inhibit-rules
-      cname: Custom - Inhibit Rules - View
-    - name: /custom/inhibit-rules/add
-      cname: Custom - Inhibit Rules - Add
-    - name: /custom/inhibit-rules/put
-      cname: Custom - Inhibit Rules - Modify
-    - name: /custom/inhibit-rules/del
-      cname: Custom - Inhibit Rules - Delete
-    - name: /custom/mute-crons
-      cname: Custom - Cron Mute - View
-    - name: /custom/mute-crons/add
-      cname: Custom - Cron Mute - Add
-    - name: /custom/mute-crons/put
-      cname: Custom - Cron Mute - Modify
-    - name: /custom/mute-crons/del
-      cname: Custom - Cron Mute - Delete
-    - name: /custom/emergency-mute
-      cname: Custom - Emergency Mute - View / Set
-    - name: /custom/incidents
-      cname: Custom - Incidents - View
-    - name: /custom/incidents/close
-      cname: Custom - Incidents - Close
-    - name: /custom/audit-logs
-      cname: Custom - Audit Logs - View
+  - name: custom_denoise
+    cname: Custom - Denoise
+    ops:
+      - name: /custom/aggregate-rules
+        cname: Custom - Aggregate Rules - View
+      - name: /custom/aggregate-rules/add
+        cname: Custom - Aggregate Rules - Add
+      - name: /custom/aggregate-rules/put
+        cname: Custom - Aggregate Rules - Modify
+      - name: /custom/aggregate-rules/del
+        cname: Custom - Aggregate Rules - Delete
+      - name: /custom/inhibit-rules
+        cname: Custom - Inhibit Rules - View
+      - name: /custom/inhibit-rules/add
+        cname: Custom - Inhibit Rules - Add
+      - name: /custom/inhibit-rules/put
+        cname: Custom - Inhibit Rules - Modify
+      - name: /custom/inhibit-rules/del
+        cname: Custom - Inhibit Rules - Delete
+      # NOTE: cron mute (/custom/mute-crons) is intentionally NOT exposed via
+      # UI permissions. Product decision: production alerts must be handled
+      # 24/7; any time-window mute creates blind spots. The backend code path
+      # is kept for future re-evaluation but no menu / page references it.
+      - name: /custom/emergency-mute
+        cname: Custom - Emergency Mute - View / Set
+      - name: /custom/incidents
+        cname: Custom - Incidents - View
+      - name: /custom/incidents/close
+        cname: Custom - Incidents - Close
+      - name: /custom/audit-logs
+        cname: Custom - Audit Logs - View
